@@ -1,0 +1,44 @@
+# Casos Válidos (El parser debe ACEPTAR)
+// --- Casos base ---
+id
+123.45
+// --- Operaciones simples ---
+id + num
+id - 10
+20 * 30
+var1 / var2
+100 % 3
+// --- Paréntesis ---
+(id)
+(id + num)
+// --- Cadenas más largas (Prueba de "recursión") ---
+id + num - var2 / 10 * 3
+id + 5 * id_b - 200 / 10 % 3
+// --- Pruebas de precedencia (forzada por la gramática) ---
+id + id * id
+(id + id) * id
+// --- Anidamiento complejo ---
+( (id) ) + ( ( ( (100) ) ) )
+(id + num) * (num % id) / id - (num + (id * id))
+
+Casos Inválidos (El parser debe RECHAZAR con error)
+// --- Operador colgado (falta operando) ---
+id +
+// --- Operador al inicio (No está en FIRST(E)) ---
+* id + num
+// --- Operador doble (falta operando) ---
+id * / 10
+// --- Operando doble (falta operador) ---
+id id + 10
+// --- Paréntesis sin cerrar ---
+( id + num
+// --- Paréntesis sin abrir ---
+id + num )
+// --- Paréntesis vacíos (E no puede derivar en lambda) ---
+()
+// --- Expresión incompleta dentro de paréntesis ---
+id + (num * )
+// --- Token inesperado después de 'id' ---
+5 (id + 10)
+// --- Archivo vacío ---
+(Simplemente borra todo el contenido del archivo)

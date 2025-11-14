@@ -37,6 +37,7 @@ TERMINALS = sorted(list(TERMINALS)) + ['$'] # '$' representa el fin de la entrad
 
 
 # --- Tarea: "Identificar el conjunto first" ---
+# VERSIÓN CORREGIDA
 
 def compute_first_sets(grammar, non_terminals, terminals):
     """Calcula los conjuntos FIRST para todos los no-terminales."""
@@ -44,6 +45,12 @@ def compute_first_sets(grammar, non_terminals, terminals):
     
     # Un helper para calcular el FIRST de una secuencia de símbolos (e.g., T E')
     def get_first_of_sequence(sequence):
+        # 1. CORRECCIÓN: Manejar ['lambda'] y secuencias vacías explícitamente
+        if not sequence:
+            return {'lambda'}
+        if sequence == ['lambda']:
+            return {'lambda'}
+
         first_seq = set()
         i = 0
         while i < len(sequence):
@@ -54,18 +61,16 @@ def compute_first_sets(grammar, non_terminals, terminals):
                 break # Se detiene al encontrar un terminal
             
             if symbol in non_terminals:
+                # Obtenemos el FIRST del símbolo (que se está calculando iterativamente)
                 first_of_symbol = first_sets[symbol]
                 first_seq.update(first_of_symbol - {'lambda'})
                 
                 if 'lambda' not in first_of_symbol:
                     break # No es anulable, nos detenemos
             
-            if symbol == 'lambda':
-                break
-                
             i += 1
         
-        # Si todos los símbolos de la secuencia fueron anulables (o la secuencia estaba vacía)
+        # Si todos los símbolos de la secuencia fueron anulables
         if i == len(sequence):
             first_seq.add('lambda')
             
@@ -84,7 +89,10 @@ def compute_first_sets(grammar, non_terminals, terminals):
                     
     return first_sets, get_first_of_sequence
 
-def compute_follow_sets(grammar, non_terminals, start_symbol, first_sets):
+# --- Tarea: "Identificar el conjunto follow" ---
+# VERSIÓN CORREGIDA
+
+def compute_follow_sets(grammar, non_terminals, start_symbol, first_sets, get_first_seq_func):
     """Calcula los conjuntos FOLLOW para todos los no-terminales."""
     follow_sets = {nt: set() for nt in non_terminals}
     follow_sets[start_symbol].add('$') # Regla 1
@@ -98,27 +106,21 @@ def compute_follow_sets(grammar, non_terminals, start_symbol, first_sets):
                     symbol_B = production[i]
                     if symbol_B in non_terminals:
                         # Buscamos el FOLLOW de symbol_B
-                        # Regla 2: A -> a B b
+                        # Regla 2: A -> a B beta
                         beta = production[i+1:]
-                        if beta:
-                            first_of_beta, _ = compute_first_sets(
-                                {symbol_B: [beta]}, [symbol_B], TERMINALS
-                            )
-                            first_beta = first_of_beta[symbol_B]
-                            
-                            # Añadir FIRST(beta) - {lambda}
-                            new_symbols = first_beta - {'lambda'}
-                            if not new_symbols.issubset(follow_sets[symbol_B]):
-                                follow_sets[symbol_B].update(new_symbols)
-                                changed = True
-                            
-                            # Regla 3: Si FIRST(beta) contiene lambda
-                            if 'lambda' in first_beta:
-                                if not follow_sets[nt_A].issubset(follow_sets[symbol_B]):
-                                    follow_sets[symbol_B].update(follow_sets[nt_A])
-                                    changed = True
-                        else:
-                            # Regla 3: A -> a B (beta está vacío)
+                        
+                        # 2. CORRECCIÓN: Usar el 'get_first_seq_func' que pasamos
+                        # en lugar de recalcular FIRST de forma incorrecta.
+                        first_beta = get_first_seq_func(beta)
+                        
+                        # Añadir FIRST(beta) - {lambda}
+                        new_symbols = first_beta - {'lambda'}
+                        if not new_symbols.issubset(follow_sets[symbol_B]):
+                            follow_sets[symbol_B].update(new_symbols)
+                            changed = True
+                        
+                        # Regla 3: Si FIRST(beta) contiene lambda (o beta está vacío)
+                        if 'lambda' in first_beta:
                             if not follow_sets[nt_A].issubset(follow_sets[symbol_B]):
                                 follow_sets[symbol_B].update(follow_sets[nt_A])
                                 changed = True
@@ -161,29 +163,30 @@ def create_parsing_table(grammar, first_sets, follow_sets, get_first_seq_func, n
 # Definición de un Token
 Token = namedtuple('Token', ['type', 'value', 'line', 'column'])
 
+# --- Tarea: "Lectura de archivo" (Implementación del Lexer) ---
+# VERSIÓN CORREGIDA
+
+# Definición de un Token
+Token = namedtuple('Token', ['type', 'value', 'line', 'column'])
+
 class Lexer:
     """Analizador Léxico (Tokenizer)."""
     
     def __init__(self, file_content):
         self.content = file_content
+        
         # Patrones de Expresiones Regulares para los tokens
-        # El orden es importante (ej. ID vs palabras clave si las tuviéramos)
+        # AHORA USAMOS NOMBRES DE GRUPO VÁLIDOS
         token_specs = [
-            ('num',     r'\d+(\.\d*)?'),      # Números (enteros o flotantes)
-            ('id',      r'[a-zA-Z_][a-zA-Z0-9_]*'), # Identificadores
-            ('+',       r'\+'),              # Suma
-            ('-',       r'-'),              # Resta
-            ('*',       r'\*'),              # Multiplicación
-            ('/',       r'/'),              # División
-            ('%',       r'%'),              # Módulo
-            ('(',       r'\('),              # Paréntesis izquierdo
-            (')',       r'\)'),              # Paréntesis derecho
-            ('NEWLINE', r'\n'),              # Salto de línea (para contar líneas)
-            ('SKIP',    r'[ \t]+'),          # Espacios y tabs (ignorar)
-            ('MISMATCH',r'.'),               # Cualquier otro caracter (error)
+            ('num',     r'\d+(\.\d*)?'),              # Números (enteros o flotantes)
+            ('id',      r'[a-zA-Z_][a-zA-Z0-9_]*'),     # Identificadores
+            # Agrupamos todos los operadores y símbolos en un solo grupo 'OP'
+            ('OP',      r'\+|-|\*|/|%|\(|\)'),         # Operadores y Paréntesis
+            ('NEWLINE', r'\n'),                      # Salto de línea
+            ('SKIP',    r'[ \t]+'),                  # Espacios y tabs (ignorar)
+            ('MISMATCH',r'.'),                       # Cualquier otro caracter (error)
         ]
         
-        # Compilamos el regex
         self.tok_regex = re.compile('|'.join(f'(?P<{name}>{pattern})' for name, pattern in token_specs))
         self.line_num = 1
         self.line_start = 0
@@ -201,12 +204,17 @@ class Lexer:
             elif kind == 'SKIP':
                 continue
             elif kind == 'MISMATCH':
-                # Ignoramos comentarios o caracteres no reconocidos
-                # para este analizador simple de expresiones
-                continue 
+                # Ignoramos caracteres no reconocidos (como '//' o '=')
+                continue
+            
+            # --- LÓGICA DE GENERACIÓN DE TOKENS CORREGIDA ---
+            elif kind == 'OP':
+                # Si es un operador, el TIPO de token es su propio VALOR
+                # Ej: Token(type='+', value='+', ...)
+                yield Token(value, value, self.line_num, column)
             else:
-                # Mapeamos el 'kind' del regex a los símbolos de la gramática
-                # Ej. El 'kind' es 'num', el símbolo de la gramática es 'num'
+                # Para 'num' e 'id', el 'kind' es el tipo
+                # Ej: Token(type='id', value='variable', ...)
                 yield Token(kind, value, self.line_num, column)
                 
         # Fin de la entrada
@@ -322,12 +330,14 @@ def main():
     
     # --- 3. Conjuntos FIRST y FOLLOW ---
     print("\n--- 3. Conjuntos FIRST ---")
+    # CORRECCIÓN: Captura la función helper
     first_sets, get_first_seq_func = compute_first_sets(GRAMMAR, NON_TERMINALS, TERMINALS)
     for nt, f_set in first_sets.items():
         print(f"FIRST({nt}) = {f_set}")
 
     print("\n--- 3. Conjuntos FOLLOW ---")
-    follow_sets = compute_follow_sets(GRAMMAR, NON_TERMINALS, START_SYMBOL, first_sets)
+    # CORRECCIÓN: Pasa la función helper a 'compute_follow_sets'
+    follow_sets = compute_follow_sets(GRAMMAR, NON_TERMINALS, START_SYMBOL, first_sets, get_first_seq_func)
     for nt, f_set in follow_sets.items():
         print(f"FOLLOW({nt}) = {f_set}")
         
@@ -357,27 +367,25 @@ def main():
         sys.exit(1)
 
     # --- 5 y 6. Implementación (Lexer y Parser) ---
-    # MODIFICACIÓN: Se elimina la creación automática de archivos.
-    # Ahora puedes probar tus propios archivos.
+    # MODIFICACIÓN: Aceptar el nombre del archivo como argumento de línea de comandos.
 
     # Instanciamos el parser con la tabla generada
     parser = Parser(table=parsing_table, start_symbol=START_SYMBOL)
     
-    print("\n--- Analizador Sintáctico Interactivo ---")
-    print("Crea tus propios archivos .java (ej: prueba1.java, error1.java)")
-    print("Escribe el nombre del archivo que quieres analizar.")
-    print("Escribe 'salir' para terminar.")
-    
-    while True:
-        filename = input("\nArchivo a analizar > ")
-        if filename.lower() == 'salir':
-            break
+    # Verificar si se pasó un argumento
+    if len(sys.argv) != 2:
+        print("\n*** Error de Uso ***")
+        print("Por favor, ejecuta el script de esta forma:")
+        print(f"  python {sys.argv[0]} <nombre_del_archivo.java>")
+        sys.exit(1) # Salir con código de error
         
-        # Opcional: auto-añadir .java si no está
-        if not filename.endswith(".java") and '.' not in filename:
-             filename += ".java"
-            
-        parser.parse(filename)
+    # Obtener el nombre del archivo del argumento
+    # sys.argv[0] es el nombre del script (ej. "parser_proyecto.py")
+    # sys.argv[1] es el primer argumento (ej. "prueba.java")
+    filename = sys.argv[1]
+    
+    # Analizar el archivo proporcionado
+    parser.parse(filename)
 
 
 if __name__ == "__main__":
